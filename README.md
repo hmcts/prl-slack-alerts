@@ -74,7 +74,7 @@ From the Azure portal:
 
 ```
 environment: staging
-Application: financial-remedy
+Application: family-private-law
 businessArea: CFT
 ExpiresAfter: 3000-01-01
 builtFrom: https://github.com/hmcts/prl-slack-alerts
