@@ -14,16 +14,16 @@ from azure.keyvault.secrets import SecretClient
 # ApplicationInsights query
 query = """
 union
-    (app('finrem-prod').exceptions
+    (app('prl-appinsights-prod').exceptions
     | where timestamp > ago(5min)
     | project timestamp, errorType = type, errorMessage = outerMessage, operation_Id),
-    (app('finrem-prod').traces
+    (app('prl-appinsights-prod').traces
     | where timestamp > ago(5min) and severityLevel == 3
     | project timestamp, errorType = message, errorMessage = message, operation_Id)
 | order by timestamp desc
 """
 
-key_vault_url = "https://finrem-slack-alerts.vault.azure.net/"
+key_vault_url = "https://prl-slack-alerts.vault.azure.net/"
 
 # Authenticates using azure
 credential = DefaultAzureCredential()
@@ -98,7 +98,7 @@ def unique_exceptions(all_exceptions):
 
     # Add the Azure link to each unique error-causing operation
     for i in unique_logs:
-        azure_link = generate_azure_link(tenant_id, subscription_id, app_insights_resource_name, 'microsoft.insights',
+        azure_link = generate_azure_link(tenant_id, subscription_id, resource_group_name, 'microsoft.insights',
                                          app_insights_resource_name, i.operation_id)
         i.azure_link = azure_link
     return unique_logs
@@ -195,7 +195,9 @@ app = func.FunctionApp()
 
 
 @app.function_name(name="AzureTimerTrigger")
-@app.schedule(schedule="*/5 * * * *", arg_name="AzureTimerTrigger", run_on_startup=False)
+@app.timer_trigger(schedule="0 */5 * * * *", 
+              arg_name="AzureTimerTrigger",
+              run_on_startup=False) 
 def trigger_function(AzureTimerTrigger: func.TimerRequest) -> None:
     logging.info("Starting...")
     query_data = query_application_insights()
@@ -205,7 +207,7 @@ def trigger_function(AzureTimerTrigger: func.TimerRequest) -> None:
     logging.info(f"{num_operation_ids} events found")
     if num_operation_ids == 0:
         return
-    
+
     all_classes = unique_exceptions(rows)
     counts = get_counts(rows, operation_ids)
     error_data = build_error_table(all_classes)
@@ -215,5 +217,5 @@ def trigger_function(AzureTimerTrigger: func.TimerRequest) -> None:
     if response_from_slack.raise_for_status() is not None:
         logging.error(response_from_slack.raise_for_status())
     logging.info(func.HttpResponse(f"{response_from_slack.status_code}, {response_from_slack.text}"))
-    
+
     return

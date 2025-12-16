@@ -1,4 +1,4 @@
-# Financial Remedy Slack Alerts
+# Private Law Slack Alerts
 
 ### A serverless Azure Function for Application Insights monitoring and alerts
 This project was forked from [et-slack-alerts](https://github.com/hmcts/et-slack-alerts)
@@ -35,21 +35,26 @@ This function requires several environment variables (defined within the given k
 - `app-insights-resource-name` - The name of the Application Insights instance.
 - `subscription-id` - The subscription id that the Application Insights instance is stored within.
 
+## Slack Setup
+- Create a new Slack channel that will be destination for alerts.
+- Create a new Slack App from https://api.slack.com/apps (ensure you set the workspace to 'HMCTS DTS').
+- Create an Incoming Webhook for your new app. Note this action will trigger an approval request before it can be completed.
+
 ## Azure Installation
 ### Create Azure resources
 ```
-az group create --name "finrem-slack-alerts" --location "uksouth"
+az group create --name "prl-slack-alerts" --location "uksouth"
  
-az keyvault create --name "finrem-slack-alerts" --resource-group "finrem-slack-alerts"
+az keyvault create --name "prl-slack-alerts" --resource-group "prl-slack-alerts"
  
-az storage account create --name "finremslackalertsstorage" --location "uksouth" --resource-group "finrem-slack-alerts" --sku Standard_LRS
+az storage account create --name "prlslackalertsstorage" --location "uksouth" --resource-group "prl-slack-alerts" --sku Standard_LRS
  
-az functionapp create --resource-group "finrem-slack-alerts" --consumption-plan-location "uksouth" --runtime python --runtime-version 3.11 --functions-version 4 --name "finrem-slack-alerts" --os-type linux --storage-account "finremslackalertsstorage"
+az functionapp create --resource-group "prl-slack-alerts" --consumption-plan-location "uksouth" --runtime python --runtime-version 3.11 --functions-version 4 --name "prl-slack-alerts" --os-type linux --storage-account "prlslackalertsstorage"
 ```
 
 ### Add Managed Identity to the function app
 From the Azure portal:
-- Navigate to the finrem-slack-alerts function app
+- Navigate to the prl-slack-alerts function app
 - Settings -> Identity
 - Select System Assigned
 - Toggle Status on
@@ -57,13 +62,14 @@ From the Azure portal:
 
 ### Add function app to the key vault
 From the Azure portal:
-- Navigate to the finrem-slack-alerts key vault
+- Navigate to the prl-slack-alerts key vault
 - Access policies
 - Create
+- If this option is not available then you will need platops to create the access
 
 ### Add tags to function app
 From the Azure portal:
-- Navigate to the finrem-slack-alerts function app
+- Navigate to the prl-slack-alerts function app
 - Add tags
 
 ```
@@ -71,7 +77,7 @@ environment: staging
 Application: financial-remedy
 businessArea: CFT
 ExpiresAfter: 3000-01-01
-builtFrom: https://github.com/hmcts/finrem-slack-alerts
+builtFrom: https://github.com/hmcts/prl-slack-alerts
 ```
 
 ## Development
@@ -79,6 +85,11 @@ builtFrom: https://github.com/hmcts/finrem-slack-alerts
 #### Install Azurite
 ```
 npm install -g azurite
+```
+
+#### Clone the repository
+```
+git clone https://github.com/hmcts/prl-slack-alerts.git
 ```
 
 #### Create local.settings.json file in alerts folder
@@ -93,14 +104,9 @@ npm install -g azurite
 }
 ```
 
-#### Clone the repository
-```
-git clone https://github.com/hmcts/finrem-slack-alerts.git
-```
-
 #### Install dependencies
 ```
-cd finrem-slack-alerts/alerts
+cd prl-slack-alerts/alerts
 <optionally install a virtual environment using e.g. venv>
 python -m venv .venv
 source .venv/bin/activate
@@ -125,5 +131,5 @@ func start
 cd alerts
 az login
 az account set --subscription "DCD-CFTAPPS-SBOX"
-func azure functionapp publish finrem-slack-alerts
+func azure functionapp publish prl-slack-alerts
 ```
