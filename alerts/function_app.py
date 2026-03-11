@@ -14,12 +14,17 @@ from azure.keyvault.secrets import SecretClient
 # ApplicationInsights query
 query = """
 union
-    (app('prl-appinsights-prod').exceptions
-    | where timestamp > ago(5min)
-    | project timestamp, errorType = type, errorMessage = outerMessage, operation_Id),
-    (app('prl-appinsights-prod').traces
-    | where timestamp > ago(5min) and severityLevel == 3
-    | project timestamp, errorType = message, errorMessage = message, operation_Id)
+    (
+        app('prl-appinsights-prod').exceptions
+        | where timestamp > ago(5min)
+        | where type !in ("com.launchdarkly.shaded.com.launchdarkly.eventsource.StreamClosedByServerException")
+        | project timestamp, errorType = type, errorMessage = outerMessage, operation_Id
+    ),
+    (
+        app('prl-appinsights-prod').traces
+        | where timestamp > ago(5min) and severityLevel == 3
+        | project timestamp, errorType = message, errorMessage = message, operation_Id
+    )
 | order by timestamp desc
 """
 
@@ -195,9 +200,9 @@ app = func.FunctionApp()
 
 
 @app.function_name(name="AzureTimerTrigger")
-@app.timer_trigger(schedule="0 */5 * * * *", 
+@app.timer_trigger(schedule="0 */5 * * * *",
               arg_name="AzureTimerTrigger",
-              run_on_startup=False) 
+              run_on_startup=False)
 def trigger_function(AzureTimerTrigger: func.TimerRequest) -> None:
     logging.info("Starting...")
     query_data = query_application_insights()
