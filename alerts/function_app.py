@@ -249,11 +249,13 @@ def generate_search_cases_message(query_data):
     if isinstance(operation_ids, str):
         operation_ids = json.loads(operation_ids)
 
-    summary = f"{failure_count} failed GET /cases/searchCases requests in the last 5 minutes"
+    summary = (f"{failure_count} failed GET /cases/searchCases requests in the last 5 minutes. "
+               "This may be a complete Cafcass API blocker.")
     blocks = [
         {"type": "header", "text": {"type": "plain_text", "text": "🚨 Concerning issue: case search failures"}},
         {"type": "section", "text": {"type": "mrkdwn", "text": (
             f"*`GET /cases/searchCases` is repeatedly failing*\n"
+            "*This may be a complete Cafcass API blocker.*\n"
             f"*Failed requests:* {failure_count} in the last 5 minutes\n"
             f"*Alert threshold:* {SEARCH_CASES_FAILURE_THRESHOLD} failures\n"
             f"*Response codes:* {', '.join(sorted(str(code) for code in result_codes)) or 'Unknown'}"

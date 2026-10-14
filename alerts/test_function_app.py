@@ -43,10 +43,13 @@ class SearchCasesAlertTests(unittest.TestCase):
             with self.subTest(count=count):
                 message = self.bot.generate_search_cases_message(self.data(count, ['503', '500']))
                 self.assertIn(f'{count} failed GET /cases/searchCases', message['text'])
+                self.assertIn('This may be a complete Cafcass API blocker.', message['text'])
                 attachment = message['attachments'][0]
                 self.assertEqual('#d50200', attachment['color'])
                 self.assertIn('Concerning issue', attachment['blocks'][0]['text']['text'])
                 self.assertIn('500, 503', attachment['blocks'][1]['text']['text'])
+                self.assertIn('*This may be a complete Cafcass API blocker.*',
+                              attachment['blocks'][1]['text']['text'])
 
     def test_json_arrays_and_operation_links(self):
         with patch.object(self.bot, 'generate_azure_link', return_value='https://portal.azure.com/example'):
