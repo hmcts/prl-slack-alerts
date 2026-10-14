@@ -16,6 +16,21 @@ The function is scheduled to run every 5 minutes (customisable) and performs the
 - Builds a slack message containing a formatted table of unique event triggering operations in the given timeframe, with generated inline links to the relevant log histories.
 - Sends a slack alert (via an environment variable-defined webhook url)
 
+### Concerning case search failures
+Each run also checks production request telemetry for unsuccessful `GET /cases/searchCases`
+requests in the last five minutes. Four or more failures across all calls trigger a separate
+Slack alert with a red attachment, a “Concerning issue” heading, the failure count,
+response codes, and links to up to ten failing operations. Failure means `success == false`
+in Application Insights; individual exception counts do not affect this threshold.
+The endpoint matches the request name or exact URL path, so URL query parameters are ignored.
+This check runs even when no exceptions are found. It repeats every five minutes while
+the threshold is met, without a cooldown. Counts use observed request telemetry rows.
+These alerts use the separate `concerning-slack-webhook-url` Key Vault secret.
+If that secret is missing or empty, or delivery fails, the bot logs an error and
+continues processing ordinary exception alerts.
+
+Run the offline alert tests with `python3 -m unittest discover -s alerts -p 'test_*.py'`.
+
 ### Prerequisites
 - [Azure Functions Core Tools](https://learn.microsoft.com/en-us/azure/azure-functions/functions-run-local?tabs=macos%2Cisolated-process%2Cnode-v4%2Cpython-v2%2Chttp-trigger%2Ccontainer-apps&pivots=programming-language-csharp#install-the-azure-functions-core-tools)
 - [Python 3.7+](https://www.python.org/downloads/)
@@ -29,6 +44,7 @@ The function is scheduled to run every 5 minutes (customisable) and performs the
 This function requires several environment variables (defined within the given keyvault)
 - `app-insights-workspace-id` - The workspace id of the application insights instance. This can be found in the 'Properties' section of the Application Insights instance.
 - `slack-webhook-url` - A slack webhook URL for you to send messages to. For this part you will likely need to contact myself (@Danny on Slack) or a Slack administrator to get a custom slack 'app' set up. This is much more trivial than it sounds, a few clicks at most.
+- `concerning-slack-webhook-url` - A separate webhook for concerning alerts, configured in Slack for channel `C08QBACF45P`. Required to deliver concerning alerts; ordinary exception alerts use `slack-webhook-url`.
 - `tenant-id` - Standard for the entire organisation.
 - `resource-group-name` - The resource group name that the Application Insights instance is stored within.
 - `app-insights-resource-name` - The name of the Application Insights instance.
@@ -38,6 +54,12 @@ This function requires several environment variables (defined within the given k
 - Create a new Slack channel that will be destination for alerts.
 - Create a new Slack App from https://api.slack.com/apps (ensure you set the workspace to 'HMCTS DTS').
 - Create an Incoming Webhook for your new app. Note this action will trigger an approval request before it can be completed.
+
+For concerning alerts, add another incoming webhook to the existing Slack app and select
+the channel with ID `C08QBACF45P`. Save its URL as `concerning-slack-webhook-url` in the
+`prl-slack-alerts` Azure Key Vault. Slack app incoming webhooks are tied to their selected
+channel; the message payload cannot override it. Confirm the selected channel when
+creating the webhook. The bot uses its existing managed identity to retrieve the secret.
 
 ## Azure Installation
 ### Create Azure resources
