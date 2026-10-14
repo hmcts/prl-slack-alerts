@@ -16,6 +16,18 @@ The function is scheduled to run every 5 minutes (customisable) and performs the
 - Builds a slack message containing a formatted table of unique event triggering operations in the given timeframe, with generated inline links to the relevant log histories.
 - Sends a slack alert (via an environment variable-defined webhook url)
 
+### Concerning case search failures
+Each run also checks production request telemetry for unsuccessful `GET /cases/searchCases`
+requests in the last five minutes. Four or more failures across all calls trigger a separate
+Slack alert with a red attachment, a “Concerning issue” heading, the failure count,
+response codes, and links to up to ten failing operations. Failure means `success == false`
+in Application Insights; individual exception counts do not affect this threshold.
+The endpoint matches the request name or exact URL path, so URL query parameters are ignored.
+This check runs even when no exceptions are found. It repeats every five minutes while
+the threshold is met, without a cooldown. Counts use observed request telemetry rows.
+
+Run the offline alert tests with `python3 -m unittest discover -s alerts -p 'test_*.py'`.
+
 ### Prerequisites
 - [Azure Functions Core Tools](https://learn.microsoft.com/en-us/azure/azure-functions/functions-run-local?tabs=macos%2Cisolated-process%2Cnode-v4%2Cpython-v2%2Chttp-trigger%2Ccontainer-apps&pivots=programming-language-csharp#install-the-azure-functions-core-tools)
 - [Python 3.7+](https://www.python.org/downloads/)

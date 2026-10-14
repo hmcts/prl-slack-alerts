@@ -29,6 +29,19 @@ union
 | order by timestamp desc
 """
 
+SEARCH_CASES_FAILURE_THRESHOLD = 4
+search_cases_query = f"""
+app('prl-appinsights-prod').requests
+| where timestamp > ago(5min)
+| where success == false
+| where name startswith_cs "GET "
+| where name == "GET /cases/searchCases" or tostring(parse_url(url).Path) == "/cases/searchCases"
+| summarize failureCount = count(), resultCodes = make_set(resultCode),
+    operationIds = make_set_if(operation_Id, isnotempty(operation_Id), 10)
+| where failureCount >= {SEARCH_CASES_FAILURE_THRESHOLD}
+| project failureCount, resultCodes, operationIds
+"""
+
 key_vault_url = "https://prl-slack-alerts.vault.azure.net/"
 
 # Authenticates using azure
@@ -73,11 +86,11 @@ class ErrorLog:
 
 
 # Function to query Application Insights
-def query_application_insights():
+def query_application_insights(query_text=query):
     try:
         response = logs_client.query_workspace(
             workspace_id=workspace_id,
-            query=query,
+            query=query_text,
             timespan=timedelta(minutes=5)
         )
 
@@ -221,6 +234,50 @@ def build_error_table(rows):
     return output
 
 
+def generate_search_cases_message(query_data):
+    rows = query_data['tables'][0]['rows']
+    if not rows:
+        return None
+
+    failure_count, result_codes, operation_ids = rows[0]
+    if failure_count < SEARCH_CASES_FAILURE_THRESHOLD:
+        return None
+
+    # Dynamic KQL arrays can be returned as JSON strings by the query client.
+    if isinstance(result_codes, str):
+        result_codes = json.loads(result_codes)
+    if isinstance(operation_ids, str):
+        operation_ids = json.loads(operation_ids)
+
+    summary = f"{failure_count} failed GET /cases/searchCases requests in the last 5 minutes"
+    blocks = [
+        {"type": "header", "text": {"type": "plain_text", "text": "🚨 Concerning issue: case search failures"}},
+        {"type": "section", "text": {"type": "mrkdwn", "text": (
+            f"*`GET /cases/searchCases` is repeatedly failing*\n"
+            f"*Failed requests:* {failure_count} in the last 5 minutes\n"
+            f"*Alert threshold:* {SEARCH_CASES_FAILURE_THRESHOLD} failures\n"
+            f"*Response codes:* {', '.join(sorted(str(code) for code in result_codes)) or 'Unknown'}"
+        )}},
+    ]
+    links = []
+    for operation_id in operation_ids[:10]:
+        link = generate_azure_link(tenant_id, subscription_id, resource_group_name,
+                                   'microsoft.insights', app_insights_resource_name, operation_id)
+        links.append(f"<{link}|{operation_id}>")
+    if links:
+        blocks.append({"type": "section", "text": {"type": "mrkdwn", "text": (
+            "*Sample failing operations (up to 10)*\n" + "\n".join(links)
+        )}})
+
+    return {"text": summary, "attachments": [{"color": "#d50200", "blocks": blocks}]}
+
+
+def send_slack_message(message):
+    response = requests.post(slack_webhook_url, json=message, timeout=30)
+    response.raise_for_status()
+    logging.info("Slack alert sent: HTTP %s", response.status_code)
+
+
 app = func.FunctionApp()
 
 
@@ -230,6 +287,10 @@ app = func.FunctionApp()
               run_on_startup=False)
 def trigger_function(AzureTimerTrigger: func.TimerRequest) -> None:
     logging.info("Starting...")
+    concerning_message = generate_search_cases_message(query_application_insights(search_cases_query))
+    if concerning_message:
+        send_slack_message(concerning_message)
+
     query_data = query_application_insights()
     rows = get_rows_from_json(query_data)
     operation_ids = get_unique_operation_ids(rows)
@@ -243,9 +304,6 @@ def trigger_function(AzureTimerTrigger: func.TimerRequest) -> None:
     error_data = build_error_table(all_classes)
     built_message = generate_message(error_data, counts)
 
-    response_from_slack = requests.post(slack_webhook_url, json=built_message)
-    if response_from_slack.raise_for_status() is not None:
-        logging.error(response_from_slack.raise_for_status())
-    logging.info(func.HttpResponse(f"{response_from_slack.status_code}, {response_from_slack.text}"))
+    send_slack_message(built_message)
 
     return
