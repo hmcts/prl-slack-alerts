@@ -274,10 +274,23 @@ def generate_search_cases_message(query_data):
     return {"text": summary, "attachments": [{"color": "#d50200", "blocks": blocks}]}
 
 
-def send_slack_message(message):
-    response = requests.post(slack_webhook_url, json=message, timeout=30)
+def send_slack_message(message, webhook_url):
+    response = requests.post(webhook_url, json=message, timeout=30)
     response.raise_for_status()
     logging.info("Slack alert sent: HTTP %s", response.status_code)
+
+
+def send_concerning_slack_message(message):
+    try:
+        webhook_url = secret_client.get_secret('concerning-slack-webhook-url').value
+        if not webhook_url or not webhook_url.strip():
+            logging.error("Concerning alert not sent: concerning-slack-webhook-url is empty")
+            return
+        send_slack_message(message, webhook_url)
+    except Exception:
+        # Do not log exception details: HTTP errors can contain the secret webhook URL.
+        logging.error("Concerning alert not sent: check concerning-slack-webhook-url, "
+                      "Key Vault access, and Slack availability")
 
 
 app = func.FunctionApp()
@@ -291,7 +304,7 @@ def trigger_function(AzureTimerTrigger: func.TimerRequest) -> None:
     logging.info("Starting...")
     concerning_message = generate_search_cases_message(query_application_insights(search_cases_query))
     if concerning_message:
-        send_slack_message(concerning_message)
+        send_concerning_slack_message(concerning_message)
 
     query_data = query_application_insights()
     rows = get_rows_from_json(query_data)
@@ -306,6 +319,6 @@ def trigger_function(AzureTimerTrigger: func.TimerRequest) -> None:
     error_data = build_error_table(all_classes)
     built_message = generate_message(error_data, counts)
 
-    send_slack_message(built_message)
+    send_slack_message(built_message, slack_webhook_url)
 
     return

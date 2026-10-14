@@ -32,6 +32,12 @@ class SearchCasesAlertTests(unittest.TestCase):
     def data(self, count, codes=None, operations=None):
         return {'tables': [{'rows': [[count, codes or ['500'], operations or []]]}]}
 
+    def setUp(self):
+        self.secret_patch = patch.object(self.bot.secret_client, 'get_secret',
+                                         return_value=MagicMock(value='https://example.com/concerning-webhook'))
+        self.secret = self.secret_patch.start()
+        self.addCleanup(self.secret_patch.stop)
+
     def test_empty_or_below_threshold_does_not_alert(self):
         self.assertIsNone(self.bot.generate_search_cases_message({'tables': [{'rows': []}]}))
         for count in range(4):
@@ -78,6 +84,8 @@ class SearchCasesAlertTests(unittest.TestCase):
         self.assertEqual(2, query.call_count)
         self.assertEqual(1, send.call_count)
         self.assertIn('attachments', send.call_args.args[0])
+        self.assertEqual('https://example.com/concerning-webhook', send.call_args.args[1])
+        self.secret.assert_called_once_with('concerning-slack-webhook-url')
 
     def test_both_alerts_are_sent_when_exceptions_also_exist(self):
         with patch.object(self.bot, 'query_application_insights', side_effect=[
@@ -87,6 +95,41 @@ class SearchCasesAlertTests(unittest.TestCase):
             self.bot.trigger_function(MagicMock())
         self.assertEqual(2, send.call_count)
         self.assertEqual('New Exception Alert', send.call_args_list[1].args[0]['blocks'][0]['text']['text'])
+        self.assertEqual('https://example.com/concerning-webhook', send.call_args_list[0].args[1])
+        self.assertEqual(self.bot.slack_webhook_url, send.call_args_list[1].args[1])
+
+    def test_missing_secret_does_not_prevent_exception_alerts(self):
+        self.secret.side_effect = RuntimeError('secret unavailable')
+        with patch.object(self.bot, 'query_application_insights', side_effect=[
+            self.data(4), {'tables': [{'rows': [['2026-10-14T12:00:00Z', 'Error', 'Failed', 'op-1']]}]},
+        ]), patch.object(self.bot, 'generate_azure_link', return_value='https://portal.azure.com'), \
+                patch.object(self.bot, 'send_slack_message') as send, \
+                self.assertLogs(level='ERROR') as logs:
+            self.bot.trigger_function(MagicMock())
+        self.assertEqual(1, send.call_count)
+        self.assertEqual(self.bot.slack_webhook_url, send.call_args.args[1])
+        self.assertIn('Concerning alert not sent', logs.output[0])
+
+    def test_empty_secret_does_not_send(self):
+        for value in (None, '', '   '):
+            with self.subTest(value=value):
+                self.secret.return_value.value = value
+                with patch.object(self.bot, 'send_slack_message') as send, self.assertLogs(level='ERROR'):
+                    self.bot.send_concerning_slack_message({'text': 'alert'})
+                send.assert_not_called()
+
+    def test_delivery_failure_is_logged_without_webhook_secret(self):
+        with patch.object(self.bot, 'send_slack_message', side_effect=RuntimeError(
+            'Failed https://example.com/concerning-webhook')), self.assertLogs(level='ERROR') as logs:
+            self.bot.send_concerning_slack_message({'text': 'alert'})
+        self.assertNotIn('https://example.com/concerning-webhook', '\n'.join(logs.output))
+
+    def test_slack_delivery_posts_to_the_selected_webhook(self):
+        with patch.object(self.bot.requests, 'post') as post:
+            self.bot.send_slack_message({'text': 'alert'}, 'https://example.com/concerning-webhook')
+        post.assert_called_once_with('https://example.com/concerning-webhook',
+                                     json={'text': 'alert'}, timeout=30)
+        post.return_value.raise_for_status.assert_called_once_with()
 
 
 if __name__ == '__main__':
