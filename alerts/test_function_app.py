@@ -128,7 +128,7 @@ class SearchCasesAlertTests(unittest.TestCase):
         with patch.object(self.bot.requests, 'post') as post:
             self.bot.send_slack_message({'text': 'alert'}, 'https://example.com/concerning-webhook')
         post.assert_called_once_with('https://example.com/concerning-webhook',
-                                     json={'text': 'alert'}, timeout=30)
+                                     json={'text': 'alert'}, timeout=120)
         post.return_value.raise_for_status.assert_called_once_with()
 
 

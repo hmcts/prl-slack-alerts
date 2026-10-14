@@ -275,7 +275,7 @@ def generate_search_cases_message(query_data):
 
 
 def send_slack_message(message, webhook_url):
-    response = requests.post(webhook_url, json=message, timeout=30)
+    response = requests.post(webhook_url, json=message, timeout=120)
     response.raise_for_status()
     logging.info("Slack alert sent: HTTP %s", response.status_code)
 
